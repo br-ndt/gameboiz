@@ -14,8 +14,6 @@ const ChatBox = ({ messages, socket, userId }) => {
     }
   };
 
-  console.log(messages, "MESSAGES");
-
   return (
     <div
       style={{
@@ -25,20 +23,25 @@ const ChatBox = ({ messages, socket, userId }) => {
         flexGrow: 1,
         height: "100%",
         justifyContent: "flex-end",
-        width: "320px",
       }}
     >
-      <div>
+      <div style={{ padding: "0 4px" }}>
         {messages.map((msg, index) => (
           <div key={index}>
             <p>
-              {msg.userId}:{msg.text}
+              <strong
+                style={{ color: msg.userId === userId ? "yellow" : "white" }}
+              >
+                {msg.userId}
+              </strong>
+              : {msg.text}
             </p>
           </div>
         ))}
       </div>
-      <div>
+      <div style={{ display: "flex", width: "100%" }}>
         <input
+          style={{ flexGrow: 1 }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

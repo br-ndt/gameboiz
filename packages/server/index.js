@@ -3,7 +3,10 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Server } from "socket.io";
-import { physicsStep, handleInput, stepPhysics } from "./planePhysics.js";
+import { physicsStep } from "./planePhysics.js";
+import { handleInput } from "./input.js";
+import { respawnProjectile, spawnProjectile } from "./projectile.js";
+import { moveProjectile } from "./projectile.js";
 
 function getRandomIntInclusive(min, max) {
   min = Math.ceil(min);
@@ -22,12 +25,35 @@ const io = new Server(server, {
 });
 
 const airplanes = {};
+let projectileIndex = 0;
+const projectiles = new Array(100).fill(spawnProjectile());
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 app.get("/", (req, res) => {
   res.sendFile(join(__dirname, "static/index.html"));
 });
+
+function createNewAirplane() {
+  return {
+    x: getRandomIntInclusive(0, 900),
+    y: getRandomIntInclusive(200, 800),
+    vx: 300,
+    vy: 0,
+    stalled: false,
+    angle: Math.PI * 2 * Math.random(),
+    thrust: 75,
+    angularVelocity: 0.05,
+    color:
+      "#" +
+      Math.floor(Math.random() * 16777215)
+        .toString(16)
+        .padStart(6, "0"),
+    isThrusting: true,
+    score: 0,
+    isFiring: false,
+  }; 
+}
 
 io.on("connection", (socket) => {
   console.log("a user connected " + socket.id);
@@ -37,29 +63,17 @@ io.on("connection", (socket) => {
     io.emit("chat message", msg);
   });
 
-  // Listen for control commands from the client
   socket.on("control", (data) => {
-    // Expected data is a string like "up", "down", "increaseThrust", or "decreaseThrust"
+    if (data === "resetPlanes") {
+      // Reset the sending client's plane to a new random position with default props.
+      airplanes[socket.id] = createNewAirplane();
+    } else {
     let plane = airplanes[socket.id];
     handleInput(plane, data);
+    }
   });
 
-  airplanes[socket.id] = {
-    x: getRandomIntInclusive(0, 100),
-    y: getRandomIntInclusive(0, 100), // Starting altitude of 100 units
-    vx: 10, // Initial horizontal speed
-    vy: 0, // Initial vertical speed
-    angle: Math.PI / 6, // 30 degrees in radians
-    thrust: 50, // Thrust magnitude
-    angularVelocity: 0.05, // Angular velocity in radians per second
-    color: "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0") // Random color
-  };
-
-  // Handle client disconnection
-  socket.on("disconnect", () => {
-    console.log(`Client disconnected: ${socket.id}`);
-    delete airplanes[socket.id];
-  });
+  airplanes[socket.id] = createNewAirplane();
 });
 
 // Server update loop - update physics and broadcast new positions
@@ -68,12 +82,22 @@ const dt = 1 / FPS; // time delta per frame
 setInterval(() => {
   // Update physics for each airplane
   Object.keys(airplanes).forEach((id) => {
-    airplanes[id] = stepPhysics(airplanes[id], dt);
+    airplanes[id] = physicsStep(airplanes[id], dt);
+    if (airplanes[id].isFiring) {
+      projectiles[projectileIndex] = respawnProjectile(projectiles[projectileIndex], airplanes[id]);
+      ++projectileIndex;
+      if(projectileIndex >= 100) {
+        projectileIndex = 0;
+      }
+    }
+  });
+
+  projectiles.forEach((projectile) => {
+    moveProjectile(projectile);
   });
 
   // Emit the updated positions to all connected clients
-  io.emit("update", airplanes);
-  console.log(airplanes);
+  io.emit("update", { airplanes, projectiles });
 }, 1000 / FPS);
 
 // Start the server on port 3000
